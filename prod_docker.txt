@@ -1,0 +1,391 @@
+# docker-compose.prod.yml
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: rag_postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: rag_redis
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # RabbitMQ Message Broker
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: rag_rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    ports:
+      - "5672:5672"
+      - "15672:15672"  # Management UI
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+
+  # FastAPI Backend
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: rag_api
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - CELERY_BROKER_URL=amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672//
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 16G
+        reservations:
+          cpus: '2'
+          memory: 8G
+
+  # Celery Worker (Background Tasks)
+  celery_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: rag_celery_worker
+    command: celery -A app.tasks.celery_app worker --loglevel=info --concurrency=2
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - CELERY_BROKER_URL=amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672//
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    depends_on:
+      - postgres
+      - redis
+      - rabbitmq
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 8G
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: rag_nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ./frontend/dist:/usr/share/nginx/html:ro
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  # Prometheus (Monitoring)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: rag_prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+
+  # Grafana (Dashboards)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: rag_grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  rabbitmq_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  default:
+    name: rag_network
+
+---
+# backend/Dockerfile
+FROM python:3.10-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    curl \
+    git \
+    tesseract-ocr \
+    poppler-utils \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements
+COPY requirements/prod.txt requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application
+COPY . .
+
+# Create directories
+RUN mkdir -p /app/data/{uploads,indexes,models,logs} \
+    && chmod -R 755 /app/data
+
+# Expose port
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8000/api/v1/health || exit 1
+
+# Run application
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+
+---
+# nginx/nginx.conf
+events {
+    worker_connections 1024;
+}
+
+http {
+    upstream api_backend {
+        least_conn;
+        server api:8000 max_fails=3 fail_timeout=30s;
+    }
+
+    # Rate limiting
+    limit_req_zone $binary_remote_addr zone=api_limit:10m rate=10r/s;
+    limit_conn_zone $binary_remote_addr zone=conn_limit:10m;
+
+    server {
+        listen 80;
+        server_name yourdomain.com;
+
+        # Redirect to HTTPS
+        return 301 https://$host$request_uri;
+    }
+
+    server {
+        listen 443 ssl http2;
+        server_name yourdomain.com;
+
+        ssl_certificate /etc/nginx/ssl/cert.pem;
+        ssl_certificate_key /etc/nginx/ssl/key.pem;
+        ssl_protocols TLSv1.2 TLSv1.3;
+        ssl_ciphers HIGH:!aNULL:!MD5;
+
+        # Security headers
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-XSS-Protection "1; mode=block" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+        client_max_body_size 50M;
+
+        # API routes
+        location /api {
+            limit_req zone=api_limit burst=20 nodelay;
+            limit_conn conn_limit 10;
+
+            proxy_pass http://api_backend;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+
+            # Timeouts
+            proxy_connect_timeout 60s;
+            proxy_send_timeout 60s;
+            proxy_read_timeout 60s;
+        }
+
+        # Frontend
+        location / {
+            root /usr/share/nginx/html;
+            try_files $uri $uri/ /index.html;
+        }
+    }
+}
+
+---
+# .env.example
+# Application
+APP_NAME=RAG System Pro
+ENVIRONMENT=production
+DEBUG=false
+
+# Database
+POSTGRES_USER=rag_user
+POSTGRES_PASSWORD=change_me_strong_password
+POSTGRES_DB=rag_database
+POSTGRES_HOST=postgres
+POSTGRES_PORT=5432
+
+# Redis
+REDIS_HOST=redis
+REDIS_PORT=6379
+REDIS_PASSWORD=change_me_redis_password
+
+# RabbitMQ
+RABBITMQ_USER=rag_user
+RABBITMQ_PASSWORD=change_me_rabbitmq_password
+
+# Security
+SECRET_KEY=generate_with_openssl_rand_base64_32
+ENCRYPTION_KEY=generate_with_openssl_rand_base64_32
+
+# Grafana
+GRAFANA_USER=admin
+GRAFANA_PASSWORD=change_me_grafana_password
+
+# AWS (for backups)
+AWS_ACCESS_KEY_ID=your_aws_key
+AWS_SECRET_ACCESS_KEY=your_aws_secret
+S3_BUCKET_NAME=rag-backups
+
+---
+# Makefile
+.PHONY: help build up down logs clean test deploy backup
+
+help:
+	@echo "RAG System - Production Commands"
+	@echo "================================="
+	@echo "make build     - Build Docker images"
+	@echo "make up        - Start all services"
+	@echo "make down      - Stop all services"
+	@echo "make logs      - View logs"
+	@echo "make clean     - Clean volumes"
+	@echo "make test      - Run tests"
+	@echo "make deploy    - Deploy to production"
+	@echo "make backup    - Backup data"
+
+build:
+	docker-compose -f docker-compose.prod.yml build
+
+up:
+	docker-compose -f docker-compose.prod.yml up -d
+	@echo "Services started. Access:"
+	@echo "  API: http://localhost:8000/docs"
+	@echo "  Grafana: http://localhost:3000"
+	@echo "  RabbitMQ: http://localhost:15672"
+
+down:
+	docker-compose -f docker-compose.prod.yml down
+
+logs:
+	docker-compose -f docker-compose.prod.yml logs -f
+
+clean:
+	docker-compose -f docker-compose.prod.yml down -v
+	rm -rf data/uploads/* data/indexes/*
+
+test:
+	docker-compose exec api pytest tests/ -v --cov
+
+deploy:
+	./scripts/deploy.sh
+
+backup:
+	./scripts/backup.sh
+
+---
+# scripts/backup.sh
+#!/bin/bash
+set -e
+
+echo "Starting backup..."
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+BACKUP_DIR="backups/${TIMESTAMP}"
+
+mkdir -p "${BACKUP_DIR}"
+
+# Backup PostgreSQL
+docker-compose exec -T postgres pg_dump -U ${POSTGRES_USER} ${POSTGRES_DB} > "${BACKUP_DIR}/database.sql"
+
+# Backup vector indexes
+cp -r data/indexes "${BACKUP_DIR}/"
+
+# Backup models
+cp -r data/models "${BACKUP_DIR}/"
+
+# Compress
+tar -czf "${BACKUP_DIR}.tar.gz" "${BACKUP_DIR}"
+rm -rf "${BACKUP_DIR}"
+
+# Upload to S3 (optional)
+if [ ! -z "${S3_BUCKET_NAME}" ]; then
+    aws s3 cp "${BACKUP_DIR}.tar.gz" "s3://${S3_BUCKET_NAME}/backups/"
+    echo "Backup uploaded to S3"
+fi
+
+echo "Backup complete: ${BACKUP_DIR}.tar.gz"

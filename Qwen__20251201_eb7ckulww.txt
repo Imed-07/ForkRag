@@ -1,0 +1,204 @@
+rag-system/
+├── services/
+│   │
+│   ├── rag-api/
+│   │   ├── app/
+│   │   │   ├── __init__.py
+│   │   │   ├── main.py
+│   │   │   ├── config.py
+│   │   │   ├── dependencies.py
+│   │   │   ├── api/
+│   │   │   │   └── v1/
+│   │   │   │       ├── endpoints/
+│   │   │   │       │   ├── auth.py
+│   │   │   │       │   ├── query.py
+│   │   │   │       │   ├── documents.py
+│   │   │   │       │   ├── admin.py
+│   │   │   │       │   └── health.py
+│   │   │   │       └── router.py
+│   │   │   ├── core/
+│   │   │   │   ├── security.py
+│   │   │   │   ├── rate_limiter.py
+│   │   │   │   ├── audit_logger.py
+│   │   │   │   └── cache.py
+│   │   │   ├── models/
+│   │   │   │   ├── user.py
+│   │   │   │   └── tenant.py
+│   │   │   ├── schemas/
+│   │   │   │   ├── auth.py
+│   │   │   │   ├── query.py
+│   │   │   │   └── document.py
+│   │   │   └── utils/
+│   │   │       └── feature_flags.py
+│   │   ├── tests/
+│   │   │   ├── unit/
+│   │   │   └── integration/
+│   │   ├── Dockerfile
+│   │   ├── requirements.txt
+│   │   └── pytest.ini
+│   │
+│   ├── ml-worker/
+│   │   ├── app/
+│   │   │   ├── __init__.py
+│   │   │   ├── config.py
+│   │   │   ├── domain/
+│   │   │   │   ├── rag/
+│   │   │   │   │   ├── chunker.py
+│   │   │   │   │   ├── embedder.py
+│   │   │   │   │   ├── generator.py
+│   │   │   │   │   └── response_fuser.py
+│   │   │   │   └── finetune/
+│   │   │   │       ├── trainer.py
+│   │   │   │       ├── dataset_builder.py
+│   │   │   │       └── evaluator.py
+│   │   │   ├── services/
+│   │   │   │   ├── document_intelligence/
+│   │   │   │   │   ├── pdf_parser.py
+│   │   │   │   │   ├── docx_parser.py
+│   │   │   │   │   ├── table_extractor.py
+│   │   │   │   │   ├── version_detector.py
+│   │   │   │   │   ├── ocr_normalizer.py
+│   │   │   │   │   └── metadata_enhancer.py
+│   │   │   │   ├── rag_pipeline/
+│   │   │   │   │   ├── hybrid_search.py
+│   │   │   │   │   ├── reranker.py
+│   │   │   │   │   ├── response_fusion.py
+│   │   │   │   │   ├── chunk_cache.py
+│   │   │   │   │   └── response_cache.py
+│   │   │   │   └── model_governance/
+│   │   │   │       ├── model_registry.py
+│   │   │   │       ├── quality_validator.py
+│   │   │   │       ├── human_validator.py
+│   │   │   │       └── rollback_manager.py
+│   │   │   ├── tasks/
+│   │   │   │   ├── ingestion_task.py
+│   │   │   │   ├── finetuning_task.py
+│   │   │   │   └── backup_task.py
+│   │   │   └── utils/
+│   │   │       └── observability_ml.py
+│   │   ├── tests/
+│   │   │   ├── unit/
+│   │   │   └── integration/
+│   │   ├── Dockerfile
+│   │   ├── requirements.txt
+│   │   └── pytest.ini
+│   │
+│   ├── inventory-engine/
+│   │   ├── app/
+│   │   │   ├── __init__.py
+│   │   │   ├── config.py
+│   │   │   ├── domain/
+│   │   │   │   ├── volume_calculator.py
+│   │   │   │   ├── shape_analyzer.py
+│   │   │   │   └── alert_rules.py
+│   │   │   ├── services/
+│   │   │   │   ├── sensor_validator.py
+│   │   │   │   ├── snapshot_manager.py
+│   │   │   │   └── coordinate_mapper.py
+│   │   │   ├── tasks/
+│   │   │   │   └── telemetry_processor.py
+│   │   │   └── utils/
+│   │   │       └── observability_inventory.py
+│   │   ├── tests/
+│   │   │   ├── unit/
+│   │   │   └── integration/
+│   │   ├── Dockerfile
+│   │   ├── requirements.txt
+│   │   └── pytest.ini
+│   │
+│   └── notifications/
+│       ├── app/
+│       │   ├── main.py
+│       │   ├── channels/
+│       │   │   ├── email.py
+│       │   │   ├── sms.py
+│       │   │   └── webhook.py
+│       │   └── templates/
+│       │       ├── low_stock_alert.html
+│       │       └── sensor_offline.html
+│       ├── tests/
+│       ├── Dockerfile
+│       └── requirements.txt
+│
+├── query-intelligence/
+│   ├── app/
+│   │   ├── query_classifier.py
+│   │   ├── query_rewriter.py
+│   │   ├── hallucination_detector.py
+│   │   └── router.py
+│   ├── tests/
+│   ├── Dockerfile
+│   └── requirements.txt
+│
+├── vector-store/
+│   ├── weaviate/
+│   │   ├── config/
+│   │   │   └── weaviate.conf.json
+│   │   └── Dockerfile
+│   ├── milvus/
+│   │   └── docker-compose.yml
+│   └── pgvector/
+│       └── init.sql
+│
+├── orchestration/
+│   └── prefect/
+│       ├── flows/
+│       │   ├── ingestion_flow.py
+│       │   ├── finetuning_flow.py
+│       │   ├── backup_flow.py
+│       │   └── ab_testing_flow.py
+│       ├── deployments/
+│       │   └── prod_deployment.yaml
+│       └── docker-compose.prefect.yml
+│
+├── infrastructure/
+│   ├── kubernetes/
+│   │   ├── deployments/
+│   │   │   ├── rag-api-deployment.yaml
+│   │   │   ├── ml-worker-deployment.yaml
+│   │   │   ├── inventory-engine-deployment.yaml
+│   │   │   ├── notifications-deployment.yaml
+│   │   │   ├── query-intelligence-deployment.yaml
+│   │   │   └── prefect-deployment.yaml
+│   │   ├── services/
+│   │   │   ├── rag-api-service.yaml
+│   │   │   ├── ml-worker-service.yaml
+│   │   │   └── inventory-engine-service.yaml
+│   │   └── ingress/
+│   │       └── rag-ingress.yaml
+│   ├── terraform/
+│   │   ├── main.tf
+│   │   └── variables.tf
+│   └── monitoring/
+│       ├── prometheus/
+│       │   ├── prometheus.yml
+│       │   └── exporters/
+│       │       ├── rag_exporter.py
+│       │       ├── inventory_exporter.py
+│       │       └── ml_exporter.py
+│       └── grafana/
+│           └── dashboards/
+│               ├── rag-observability.json
+│               ├── inventory-observability.json
+│               └── ml-observability.json
+│
+├── scripts/
+│   ├── deploy-microservices.sh
+│   ├── rotate-minio-creds.sh
+│   ├── backup-vectorstore.sh
+│   └── validate-model-quality.sh
+│
+├── docs/
+│   ├── architecture/
+│   │   └── adr/
+│   │       ├── 001-microservices.md
+│   │       ├── 002-vector-store-choice.md
+│   │       └── 003-observability-strategy.md
+│   └── deployment/
+│       └── prod-checklist.md
+│
+├── .env.example
+├── .gitignore
+├── docker-compose.prod.yml
+├── Makefile
+└── README.md
