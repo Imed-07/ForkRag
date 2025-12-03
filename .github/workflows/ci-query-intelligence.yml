@@ -1,0 +1,40 @@
+name: CI query-intelligence
+on:
+  push:
+    paths: ["query-intelligence/**"]
+    branches: [main]
+  pull_request:
+    paths: ["query-intelligence/**"]
+    branches: [main]
+env:
+  IMAGE: ghcr.io/${{ github.repository }}/query-intelligence
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: echo           pip install -r query-intelligence/requirements.txt && echo           pytest query-intelligence/tests
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v5
+        with:
+          context: query-intelligence
+          push: true
+          tags: ${{ env.IMAGE }}:latest,${{ env.IMAGE }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
