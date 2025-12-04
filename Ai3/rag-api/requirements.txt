@@ -1,1 +1,1 @@
-echo >> rag-api/requirements.txt
+                                                                   
